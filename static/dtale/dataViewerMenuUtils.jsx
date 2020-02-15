@@ -1,5 +1,8 @@
 import _ from "lodash";
 
+import { buildURLString } from "../actions/url-utils";
+import { fetchJsonPromise, logException } from "../fetcher";
+
 function updateSort(selectedCols, dir, { sortInfo, propagateState }) {
   let updatedSortInfo = _.filter(sortInfo, ([col, _dir]) => !_.includes(selectedCols, col));
   switch (dir) {
@@ -17,40 +20,57 @@ function updateSort(selectedCols, dir, { sortInfo, propagateState }) {
   propagateState({ sortInfo: updatedSortInfo, triggerResize: true });
 }
 
-function moveOnePosition(selectedCol, { columns, propagateState }, dir) {
+function buildCallback(route, dataId, params) {
+  return () =>
+    fetchJsonPromise(buildURLString(`/dtale/${route}/${dataId}?`, params))
+      .then(_.noop)
+      .catch((e, callstack) => {
+        logException(e, callstack);
+      });
+}
+
+function moveOnePosition(selectedCol, { columns, propagateState, dataId }, action) {
   return () => {
     const locked = _.filter(columns, "locked");
     const nonLocked = _.filter(columns, ({ locked }) => !locked);
     const selectedIdx = _.findIndex(nonLocked, { name: selectedCol });
-    if (dir === "right" && selectedIdx === nonLocked.length - 1) {
+    if (action === "right" && selectedIdx === nonLocked.length - 1) {
       return;
     }
-    if (dir === "left" && selectedIdx === 0) {
+    if (action === "left" && selectedIdx === 0) {
       return;
     }
-    const moveToRightIdx = dir === "right" ? selectedIdx : selectedIdx - 1;
+    const moveToRightIdx = action === "right" ? selectedIdx : selectedIdx - 1;
     const moveToRight = _.clone(nonLocked[moveToRightIdx]);
-    const moveToLeftIdx = dir === "right" ? selectedIdx + 1 : selectedIdx;
+    const moveToLeftIdx = action === "right" ? selectedIdx + 1 : selectedIdx;
     const moveToLeft = _.clone(nonLocked[moveToLeftIdx]);
     nonLocked[moveToRightIdx] = moveToLeft;
     nonLocked[moveToLeftIdx] = moveToRight;
     const finalCols = _.concat(locked, nonLocked);
-    propagateState({ columns: finalCols, triggerResize: true });
+    const callback = buildCallback("update-column-position", dataId, {
+      col: selectedCol,
+      action,
+    });
+    propagateState({ columns: finalCols, triggerResize: true }, callback);
   };
 }
 
-function moveToFront(selectedCol, { columns, propagateState }) {
+function moveTo(selectedCol, { columns, propagateState, dataId }, action = "front") {
   return () => {
     const locked = _.filter(columns, "locked");
-    const colsToFront = _.filter(columns, ({ name, locked }) => selectedCol === name && !locked);
+    const colsToMove = _.filter(columns, ({ name, locked }) => selectedCol === name && !locked);
     let finalCols = _.filter(columns, ({ name }) => selectedCol !== name);
     finalCols = _.filter(finalCols, ({ name }) => !_.find(locked, { name }));
-    finalCols = _.concat(locked, colsToFront, finalCols);
-    propagateState({ columns: finalCols, triggerResize: true });
+    finalCols = action === "front" ? _.concat(locked, colsToMove, finalCols) : _.concat(locked, finalCols, colsToMove);
+    const callback = buildCallback("update-column-position", dataId, {
+      col: selectedCol,
+      action,
+    });
+    propagateState({ columns: finalCols, triggerResize: true }, callback);
   };
 }
 
-function lockCols(selectedCols, { columns, propagateState }) {
+function lockCols(selectedCols, { columns, propagateState, dataId }) {
   return () => {
     let locked = _.filter(columns, "locked");
     locked = _.concat(
@@ -60,19 +80,26 @@ function lockCols(selectedCols, { columns, propagateState }) {
         c => _.assignIn({}, c, { locked: true })
       )
     );
-    propagateState({
-      columns: _.concat(
-        locked,
-        _.filter(columns, ({ name }) => !_.find(locked, { name }))
-      ),
-      fixedColumnCount: locked.length,
-      selectedCols: [],
-      triggerResize: true,
+    const callback = buildCallback("update-locked", dataId, {
+      col: selectedCols[0],
+      action: "lock",
     });
+    propagateState(
+      {
+        columns: _.concat(
+          locked,
+          _.filter(columns, ({ name }) => !_.find(locked, { name }))
+        ),
+        fixedColumnCount: locked.length,
+        selectedCols: [],
+        triggerResize: true,
+      },
+      callback
+    );
   };
 }
 
-function unlockCols(selectedCols, { columns, propagateState }) {
+function unlockCols(selectedCols, { columns, propagateState, dataId }) {
   return () => {
     let locked = _.filter(columns, "locked");
     const unlocked = _.map(
@@ -80,16 +107,23 @@ function unlockCols(selectedCols, { columns, propagateState }) {
       c => _.assignIn({}, c, { locked: false })
     );
     locked = _.filter(locked, ({ name }) => !_.includes(selectedCols, name));
-    propagateState({
-      columns: _.concat(
-        locked,
-        unlocked,
-        _.filter(columns, c => !_.get(c, "locked", false))
-      ),
-      fixedColumnCount: locked.length,
-      selectedCols: [],
-      triggerResize: true,
+    const callback = buildCallback("update-locked", dataId, {
+      col: selectedCols[0],
+      action: "unlock",
     });
+    propagateState(
+      {
+        columns: _.concat(
+          locked,
+          unlocked,
+          _.filter(columns, c => !_.get(c, "locked", false))
+        ),
+        fixedColumnCount: locked.length,
+        selectedCols: [],
+        triggerResize: true,
+      },
+      callback
+    );
   };
 }
 
@@ -126,7 +160,8 @@ function shouldOpenPopup(height, width) {
 
 export default {
   updateSort,
-  moveToFront,
+  moveToFront: (selectedCol, props) => moveTo(selectedCol, props, "front"),
+  moveToBack: (selectedCol, props) => moveTo(selectedCol, props, "back"),
   moveRight: (selectedCol, props) => moveOnePosition(selectedCol, props, "right"),
   moveLeft: (selectedCol, props) => moveOnePosition(selectedCol, props, "left"),
   lockCols,

@@ -13,9 +13,10 @@ import { isStringCol, SORT_PROPS } from "../gridUtils";
 require("./ColumnMenu.css");
 
 const MOVE_COLS = [
-  ["Front", menuFuncs.moveToFront],
-  ["Left", menuFuncs.moveLeft],
-  ["Right", menuFuncs.moveRight],
+  ["step-backward", menuFuncs.moveToFront, "Move Column To Front", {}],
+  ["caret-left", menuFuncs.moveLeft, "Move Column Left", { fontSize: "1.2em", padding: 0, width: "1.3em" }],
+  ["caret-right", menuFuncs.moveRight, "Move Column Right", { fontSize: "1.2em", padding: 0, width: "1.3em" }],
+  ["step-forward", menuFuncs.moveToBack, "Move Column To Back", {}],
 ];
 
 class ReactColumnMenu extends React.Component {
@@ -71,7 +72,7 @@ class ReactColumnMenu extends React.Component {
             <span className="toggler-action">
               <i className="fa fa-sort ml-4 mr-4" />
             </span>
-            <div className="btn-group compact pl-3 font-weight-bold column-sorting">
+            <div className="btn-group compact m-auto font-weight-bold column-sorting">
               {_.map(SORT_PROPS, ({ dir, col }) => {
                 const active = dir === currDir;
                 return (
@@ -91,14 +92,15 @@ class ReactColumnMenu extends React.Component {
             <span className="toggler-action">
               <i className="ico-swap-horiz" />
             </span>
-            <div className="btn-group compact pl-3 font-weight-bold column-sorting">
-              {_.map(MOVE_COLS, ([label, func]) => (
+            <div className="btn-group compact m-auto font-weight-bold column-sorting">
+              {_.map(MOVE_COLS, ([icon, func, hint, icnStyle]) => (
                 <button
-                  key={label}
-                  style={{ color: "#565b68" }}
+                  key={icon}
+                  style={_.assign({ color: "#565b68", width: "2em" }, icnStyle)}
                   className={`btn btn-primary font-weight-bold`}
-                  onClick={func(selectedCol, this.props)}>
-                  {label}
+                  onClick={func(selectedCol, this.props)}
+                  title={hint}>
+                  <i className={`fas fa-${icon}`} />
                 </button>
               ))}
             </div>

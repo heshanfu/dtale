@@ -187,7 +187,7 @@ class ReactDataViewer extends React.Component {
       if (this.state.heatMapMode) {
         valueStyle = _.assignIn({ background: gu.heatMapBackground(rec, colCfg) }, valueStyle);
       }
-      if (gu.findColType(colCfg.dtype) === "string" && rec.raw !== rec.view) {
+      if (_.includes(["string", "date"], gu.findColType(colCfg.dtype)) && rec.raw !== rec.view) {
         divProps.title = rec.raw;
       }
     }

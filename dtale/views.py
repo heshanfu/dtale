@@ -322,6 +322,7 @@ def format_data(data):
      - convert all column names to strings
      - drop any indexes back into the dataframe so what we are left is a natural index [0,1,2,...,n]
      - convert inputs that are indexes into dataframes
+     - replace any periods in column names with underscores
 
     :param data: dataframe to build data type information for
     :type data: :class:`pandas:pandas.DataFrame`
@@ -333,7 +334,7 @@ def format_data(data):
 
     index = [str(i) for i in make_list(data.index.name or data.index.names) if i is not None]
     data = data.reset_index().drop('index', axis=1, errors='ignore')
-    data.columns = [str(c) for c in data.columns]
+    data.columns = ['_'.join(str(c).split('.')) for c in data.columns]
     return data, index
 
 
@@ -563,6 +564,64 @@ def update_settings(data_id):
         updated_settings = dict_merge(curr_settings, get_json_arg(request, 'settings', {}))
         SETTINGS[data_id] = updated_settings
         return jsonify(dict(success=True))
+    except BaseException as e:
+        return jsonify(dict(error=str(e), traceback=str(traceback.format_exc())))
+
+
+def refresh_col_indexes(data_id):
+    curr_dtypes = {c['name']: c for c in DTYPES[data_id]}
+    DTYPES[data_id] = [dict_merge(curr_dtypes[c], dict(index=idx)) for idx, c in enumerate(DATA[data_id].columns)]
+
+
+@dtale.route('/update-column-position/<data_id>')
+def update_column_position(data_id):
+    try:
+        action = get_str_arg(request, 'action')
+        col = get_str_arg(request, 'col')
+
+        curr_cols = DATA[data_id].columns.tolist()
+        if action == 'front':
+            curr_cols = [col] + [c for c in curr_cols if c != col]
+        elif action == 'back':
+            curr_cols = [c for c in curr_cols if c != col] + [col]
+        elif action == 'left':
+            if curr_cols[0] != col:
+                col_idx = next((idx for idx, c in enumerate(curr_cols) if c == col), None)
+                col_to_shift = curr_cols[col_idx - 1]
+                curr_cols[col_idx - 1] = col
+                curr_cols[col_idx] = col_to_shift
+        elif action == 'right':
+            if curr_cols[-1] != col:
+                col_idx = next((idx for idx, c in enumerate(curr_cols) if c == col), None)
+                col_to_shift = curr_cols[col_idx + 1]
+                curr_cols[col_idx + 1] = col
+                curr_cols[col_idx] = col_to_shift
+        else:
+            return jsonify(success=True)
+
+        DATA[data_id] = DATA[data_id][curr_cols]
+        refresh_col_indexes(data_id)
+        return jsonify(success=True)
+    except BaseException as e:
+        return jsonify(dict(error=str(e), traceback=str(traceback.format_exc())))
+
+
+@dtale.route('/update-locked/<data_id>')
+def update_locked(data_id):
+    try:
+        action = get_str_arg(request, 'action')
+        col = get_str_arg(request, 'col')
+        if action == 'lock':
+            SETTINGS[data_id]['locked'].append(col)
+        elif action == 'unlock':
+            SETTINGS[data_id]['locked'] = [c for c in SETTINGS[data_id]['locked'] if c != col]
+
+        final_cols = SETTINGS[data_id]['locked'] + [
+            c for c in DATA[data_id].columns if c not in SETTINGS[data_id]['locked']
+        ]
+        DATA[data_id] = DATA[data_id][final_cols]
+        refresh_col_indexes(data_id)
+        return jsonify(success=True)
     except BaseException as e:
         return jsonify(dict(error=str(e), traceback=str(traceback.format_exc())))
 
